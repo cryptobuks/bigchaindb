@@ -6,23 +6,14 @@ import json
 import pytest
 import random
 
-from abci import (
-    PubKey,
-    ResponseInitChain,
-    RequestInitChain,
-    RequestInfo,
-    RequestBeginBlock,
-    RequestEndBlock,
-    ValidatorUpdate,
-)
+from abci import types_v0_31_5 as types
 
 from bigchaindb import App
 from bigchaindb.backend.localmongodb import query
 from bigchaindb.common.crypto import generate_key_pair
 from bigchaindb.core import (CodeTypeOk,
                              CodeTypeError,
-                             rollback
-                             )
+                             rollback)
 from bigchaindb.elections.election import Election
 from bigchaindb.lib import Block
 from bigchaindb.migrations.chain_migration_election import ChainMigrationElection
@@ -48,20 +39,20 @@ def generate_address():
 
 def generate_validator():
     pk, _ = generate_key_pair()
-    pub_key = PubKey(type='ed25519', data=pk.encode())
-    val = ValidatorUpdate(power=10, pub_key=pub_key)
+    pub_key = types.PubKey(type='ed25519', data=pk.encode())
+    val = types.ValidatorUpdate(power=10, pub_key=pub_key)
     return val
 
 
 def generate_init_chain_request(chain_id, vals=None):
     vals = vals if vals is not None else [generate_validator()]
-    return RequestInitChain(validators=vals, chain_id=chain_id)
+    return types.RequestInitChain(validators=vals, chain_id=chain_id)
 
 
 def test_init_chain_successfully_registers_chain(b):
     request = generate_init_chain_request('chain-XYZ')
     res = App(b).init_chain(request)
-    assert res == ResponseInitChain()
+    assert res == types.ResponseInitChain()
     chain = query.get_latest_abci_chain(b.connection)
     assert chain == {'height': 0, 'chain_id': 'chain-XYZ', 'is_synced': True}
     assert query.get_latest_block(b.connection) == {
@@ -75,7 +66,7 @@ def test_init_chain_ignores_invalid_init_chain_requests(b):
     validators = [generate_validator()]
     request = generate_init_chain_request('chain-XYZ', validators)
     res = App(b).init_chain(request)
-    assert res == ResponseInitChain()
+    assert res == types.ResponseInitChain()
 
     validator_set = query.get_validator_set(b.connection)
 
@@ -105,7 +96,7 @@ def test_init_chain_recognizes_new_chain_after_migration(b):
     validators = [generate_validator()]
     request = generate_init_chain_request('chain-XYZ', validators)
     res = App(b).init_chain(request)
-    assert res == ResponseInitChain()
+    assert res == types.ResponseInitChain()
 
     validator_set = query.get_validator_set(b.connection)['validators']
 
@@ -137,7 +128,7 @@ def test_init_chain_recognizes_new_chain_after_migration(b):
     request = generate_init_chain_request('chain-XYZ-migrated-at-height-1',
                                           validators)
     res = App(b).init_chain(request)
-    assert res == ResponseInitChain()
+    assert res == types.ResponseInitChain()
     assert query.get_latest_abci_chain(b.connection) == {
         'chain_id': 'chain-XYZ-migrated-at-height-1',
         'is_synced': True,
@@ -173,7 +164,7 @@ def test_init_chain_recognizes_new_chain_after_migration(b):
 
 
 def test_info(b):
-    r = RequestInfo(version=__tm_supported_versions__[0])
+    r = types.RequestInfo(version=__tm_supported_versions__[0])
     app = App(b)
 
     res = app.info(r)
@@ -258,13 +249,13 @@ def test_deliver_tx__valid_create_updates_db_and_emits_event(b, init_chain_reque
 
     app.init_chain(init_chain_request)
 
-    begin_block = RequestBeginBlock()
+    begin_block = types.RequestBeginBlock()
     app.begin_block(begin_block)
 
     result = app.deliver_tx(encode_tx_to_bytes(tx))
     assert result.code == CodeTypeOk
 
-    app.end_block(RequestEndBlock(height=99))
+    app.end_block(types.RequestEndBlock(height=99))
     app.commit()
     assert b.get_transaction(tx.id).id == tx.id
     block_event = events.get()
@@ -293,13 +284,13 @@ def test_deliver_tx__double_spend_fails(b, init_chain_request):
     app = App(b)
     app.init_chain(init_chain_request)
 
-    begin_block = RequestBeginBlock()
+    begin_block = types.RequestBeginBlock()
     app.begin_block(begin_block)
 
     result = app.deliver_tx(encode_tx_to_bytes(tx))
     assert result.code == CodeTypeOk
 
-    app.end_block(RequestEndBlock(height=99))
+    app.end_block(types.RequestEndBlock(height=99))
     app.commit()
 
     assert b.get_transaction(tx.id).id == tx.id
@@ -315,7 +306,7 @@ def test_deliver_transfer_tx__double_spend_fails(b, init_chain_request):
     app = App(b)
     app.init_chain(init_chain_request)
 
-    begin_block = RequestBeginBlock()
+    begin_block = types.RequestBeginBlock()
     app.begin_block(begin_block)
 
     alice = generate_key_pair()
@@ -355,7 +346,7 @@ def test_end_block_return_validator_updates(b, init_chain_request):
     app = App(b)
     app.init_chain(init_chain_request)
 
-    begin_block = RequestBeginBlock()
+    begin_block = types.RequestBeginBlock()
     app.begin_block(begin_block)
 
     # generate a block containing a concluded validator election
@@ -380,7 +371,7 @@ def test_end_block_return_validator_updates(b, init_chain_request):
 
     app.block_transactions = votes
 
-    resp = app.end_block(RequestEndBlock(height=2))
+    resp = app.end_block(types.RequestEndBlock(height=2))
     assert resp.validator_updates[0].power == new_validator['election']['power']
     expected = bytes.fromhex(new_validator['election']['public_key']['value'])
     assert expected == resp.validator_updates[0].pub_key.data
@@ -399,10 +390,10 @@ def test_store_pre_commit_state_in_end_block(b, alice, init_chain_request):
     app = App(b)
     app.init_chain(init_chain_request)
 
-    begin_block = RequestBeginBlock()
+    begin_block = types.RequestBeginBlock()
     app.begin_block(begin_block)
     app.deliver_tx(encode_tx_to_bytes(tx))
-    app.end_block(RequestEndBlock(height=99))
+    app.end_block(types.RequestEndBlock(height=99))
 
     resp = query.get_pre_commit_state(b.connection)
     assert resp['height'] == 99
@@ -410,7 +401,7 @@ def test_store_pre_commit_state_in_end_block(b, alice, init_chain_request):
 
     app.begin_block(begin_block)
     app.deliver_tx(encode_tx_to_bytes(tx))
-    app.end_block(RequestEndBlock(height=100))
+    app.end_block(types.RequestEndBlock(height=100))
     resp = query.get_pre_commit_state(b.connection)
     assert resp['height'] == 100
     assert resp['transactions'] == [tx.id]
@@ -420,7 +411,7 @@ def test_store_pre_commit_state_in_end_block(b, alice, init_chain_request):
     app = App(b)
     app.begin_block(begin_block)
     app.deliver_tx(encode_tx_to_bytes(tx))
-    app.end_block(RequestEndBlock(height=1))
+    app.end_block(types.RequestEndBlock(height=1))
     resp = query.get_pre_commit_state(b.connection)
     assert resp['height'] == 101
     assert resp['transactions'] == [tx.id]
@@ -514,7 +505,7 @@ def test_info_aborts_if_chain_is_not_synced(b):
     b.store_abci_chain(0, 'chain-XYZ', False)
 
     with pytest.raises(SystemExit):
-        App(b).info(RequestInfo())
+        App(b).info(types.RequestInfo())
 
 
 def test_check_tx_aborts_if_chain_is_not_synced(b):
@@ -528,7 +519,7 @@ def test_begin_aborts_if_chain_is_not_synced(b):
     b.store_abci_chain(0, 'chain-XYZ', False)
 
     with pytest.raises(SystemExit):
-        App(b).info(RequestBeginBlock())
+        App(b).info(types.RequestBeginBlock())
 
 
 def test_deliver_tx_aborts_if_chain_is_not_synced(b):
@@ -542,7 +533,7 @@ def test_end_block_aborts_if_chain_is_not_synced(b):
     b.store_abci_chain(0, 'chain-XYZ', False)
 
     with pytest.raises(SystemExit):
-        App(b).info(RequestEndBlock())
+        App(b).info(types.RequestEndBlock())
 
 
 def test_commit_aborts_if_chain_is_not_synced(b):
